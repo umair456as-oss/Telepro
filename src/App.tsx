@@ -99,7 +99,13 @@ const Login = () => {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('Email/Password login is not enabled in Firebase Console. Please enable it in Authentication > Sign-in method.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized in Firebase. Please add your Netlify URL to Authentication > Settings > Authorized domains.');
+      } else {
+        setError(err.message);
+      }
     }
   };
 
@@ -112,7 +118,13 @@ const Login = () => {
       setConfirmationResult(result);
       setStep('otp');
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('Phone login is not enabled in Firebase Console. Please enable it in Authentication > Sign-in method.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized in Firebase. Please add your Netlify URL to Authentication > Settings > Authorized domains.');
+      } else {
+        setError(err.message);
+      }
       console.error(err);
     }
   };
