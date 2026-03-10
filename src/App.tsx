@@ -226,6 +226,7 @@ export default function App() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [themeColor, setThemeColor] = useState('#2481cc');
+  const [typingUsers, setTypingUsers] = useState<{ [chatId: string]: string[] }>({});
   
   const filteredUsers = users.filter(u => 
     u.uid !== user?.uid && 
@@ -306,9 +307,33 @@ export default function App() {
       ));
     });
 
+    socket.on('user_typing', ({ chatId, userId, isTyping }) => {
+      setTypingUsers(prev => {
+        const current = prev[chatId] || [];
+        if (isTyping) {
+          if (!current.includes(userId)) return { ...prev, [chatId]: [...current, userId] };
+        } else {
+          return { ...prev, [chatId]: current.filter(id => id !== userId) };
+        }
+        return prev;
+      });
+    });
+
+    socket.on('message_updated', (updatedMsg: Message) => {
+      setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m));
+      setChats(prev => prev.map(c => {
+        if (c.id === updatedMsg.chatId && c.lastMessage?.id === updatedMsg.id) {
+          return { ...c, lastMessage: updatedMsg };
+        }
+        return c;
+      }));
+    });
+
     return () => {
       socket.off('new_message');
       socket.off('user_status');
+      socket.off('user_typing');
+      socket.off('message_updated');
     };
   }, [user, activeChat]);
 
@@ -328,16 +353,38 @@ export default function App() {
 
     const text = inputText;
     setInputText('');
+    
+    // Stop typing when sending
+    socket.emit('typing', { chatId: activeChat.id, isTyping: false });
 
-    socket.emit('send_message', {
-      chatId: activeChat.id,
-      text,
-      type: 'text'
-    });
+    if (editingMessage) {
+      socket.emit('edit_message', { messageId: editingMessage.id, text });
+      setEditingMessage(null);
+    } else {
+      socket.emit('send_message', {
+        chatId: activeChat.id,
+        text,
+        type: 'text'
+      });
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputText(e.target.value);
+    if (activeChat) {
+      socket.emit('typing', { chatId: activeChat.id, isTyping: e.target.value.length > 0 });
+    }
   };
 
   const deleteMessage = async (msgId: string) => {
-    // Implement delete via socket or API
+    socket.emit('delete_message', msgId);
   };
 
   const startNewChat = async (other: AppUser | Chat) => {
@@ -370,13 +417,14 @@ export default function App() {
         participants: [user.uid, otherUser.uid],
         name: otherUser.displayName || otherUser.username
       };
-      // In a real app, create chat via API
-      // For now, we'll just set it locally and let the server handle it if it existed
-      // But we should really have an API for this.
-      // I'll add a simple API for creating chats in server.ts later if needed.
-      setActiveChat({ id: 'temp_' + Date.now(), ...chatData } as any);
+      const newChat = await api.post('/chats', chatData);
+      setChats(prev => [newChat, ...prev]);
+      setActiveChat(newChat);
       setShowNewChat(false);
       setIsSecretChatMode(false);
+      
+      // Join socket room
+      socket.emit('authenticate', localStorage.getItem('token'));
     } catch (error) {
       console.error(error);
     }
@@ -582,12 +630,20 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="font-bold text-lg leading-tight">{getOtherParticipant(activeChat).displayName}</h3>
-                  <p className={cn(
-                    "text-xs font-medium",
-                    getOtherParticipant(activeChat).status === 'online' ? "text-[#2481cc]" : "text-[#707579]"
-                  )}>
-                    {getOtherParticipant(activeChat).status === 'online' ? 'online' : `last seen ${formatTime(getOtherParticipant(activeChat).lastSeen)}`}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    {typingUsers[activeChat.id]?.length > 0 ? (
+                      <p className="text-xs font-medium text-[#2481cc] animate-pulse">
+                        {users.find(u => u.uid === typingUsers[activeChat.id][0])?.displayName || 'Someone'} is typing...
+                      </p>
+                    ) : (
+                      <p className={cn(
+                        "text-xs font-medium",
+                        getOtherParticipant(activeChat).status === 'online' ? "text-[#2481cc]" : "text-[#707579]"
+                      )}>
+                        {getOtherParticipant(activeChat).status === 'online' ? 'online' : `last seen ${formatTime(getOtherParticipant(activeChat).lastSeen)}`}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-6 text-[#707579]">
@@ -626,7 +682,10 @@ export default function App() {
                       
                       {/* Message Actions */}
                       <div className="absolute top-0 right-full mr-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
-                        <button onClick={() => setEditingMessage(msg)} className="p-1.5 bg-white dark:bg-[#212121] rounded-full shadow-md hover:text-[#2481cc]">
+                        <button onClick={() => {
+                          setEditingMessage(msg);
+                          setInputText(msg.text);
+                        }} className="p-1.5 bg-white dark:bg-[#212121] rounded-full shadow-md hover:text-[#2481cc]">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button onClick={() => deleteMessage(msg.id)} className="p-1.5 bg-white dark:bg-[#212121] rounded-full shadow-md hover:text-red-500">
@@ -659,13 +718,8 @@ export default function App() {
                   placeholder="Message"
                   rows={1}
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
+                  onChange={handleInputChange}
+                  onKeyDown={handleInputKeyDown}
                   className="bg-transparent outline-none w-full text-[15px] resize-none max-h-32"
                 />
               </div>

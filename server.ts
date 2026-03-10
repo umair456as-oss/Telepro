@@ -24,8 +24,13 @@ db.exec(`
     status TEXT DEFAULT 'offline',
     lastSeen DATETIME,
     role TEXT DEFAULT 'user',
-    verified BOOLEAN DEFAULT 0
+    verified BOOLEAN DEFAULT 0,
+    banned BOOLEAN DEFAULT 0
   );
+
+  -- Create a default Bot user if not exists
+  INSERT OR IGNORE INTO users (uid, username, displayName, role, verified) 
+  VALUES ('bot-1', 'telepro_bot', 'TelePro Assistant', 'bot', 1);
 
   CREATE TABLE IF NOT EXISTS chats (
     id TEXT PRIMARY KEY,
@@ -159,6 +164,28 @@ app.get('/api/chats/:chatId/messages', (req, res) => {
   res.json(messages);
 });
 
+app.post('/api/chats', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const decoded: any = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    const { type, participants, name } = req.body;
+    const chatId = Math.random().toString(36).substring(2, 15);
+    
+    db.prepare('INSERT INTO chats (id, type, name) VALUES (?, ?, ?)')
+      .run(chatId, type, name || null);
+    
+    const stmt = db.prepare('INSERT INTO chat_participants (chatId, userId) VALUES (?, ?)');
+    participants.forEach((uid: string) => stmt.run(chatId, uid));
+    
+    const chat = db.prepare('SELECT * FROM chats WHERE id = ?').get(chatId);
+    res.json({ ...chat, participants });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 // --- Admin Routes ---
 
 app.post('/api/admin/users/:uid/ban', (req, res) => {
@@ -186,7 +213,7 @@ io.on('connection', (socket) => {
       socket.data.userId = decoded.uid;
       onlineUsers.set(decoded.uid, socket.id);
       
-      db.prepare('UPDATE users SET status = "online" WHERE uid = ?').run(decoded.uid);
+      db.prepare("UPDATE users SET status = 'online' WHERE uid = ?").run(decoded.uid);
       io.emit('user_status', { userId: decoded.uid, status: 'online' });
       
       // Join rooms for all user's chats
@@ -212,6 +239,47 @@ io.on('connection', (socket) => {
 
     const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
     io.to(chatId).emit('new_message', message);
+
+    // --- Bot System Logic ---
+    const participants = db.prepare('SELECT userId FROM chat_participants WHERE chatId = ?').all(chatId);
+    const hasBot = participants.some((p: any) => p.userId === 'bot-1');
+    
+    if (hasBot && userId !== 'bot-1') {
+      setTimeout(() => {
+        const botMessageId = Math.random().toString(36).substring(2, 15);
+        const botResponse = `I am your TelePro Assistant. You said: "${text}". How can I help you further?`;
+        
+        db.prepare('INSERT INTO messages (id, chatId, senderId, text, type) VALUES (?, ?, ?, ?, ?)')
+          .run(botMessageId, chatId, 'bot-1', botResponse, 'text');
+        
+        const botMsg = db.prepare('SELECT * FROM messages WHERE id = ?').get(botMessageId);
+        io.to(chatId).emit('new_message', botMsg);
+      }, 1000);
+    }
+  });
+
+  socket.on('edit_message', ({ messageId, text }) => {
+    const userId = socket.data.userId;
+    if (!userId) return;
+
+    const msg: any = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (msg && msg.senderId === userId) {
+      db.prepare('UPDATE messages SET text = ?, isEdited = 1 WHERE id = ?').run(text, messageId);
+      const updatedMsg = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+      io.to(msg.chatId).emit('message_updated', updatedMsg);
+    }
+  });
+
+  socket.on('delete_message', (messageId) => {
+    const userId = socket.data.userId;
+    if (!userId) return;
+
+    const msg: any = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (msg && msg.senderId === userId) {
+      db.prepare('UPDATE messages SET isDeleted = 1, text = "" WHERE id = ?').run(messageId);
+      const updatedMsg = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+      io.to(msg.chatId).emit('message_updated', updatedMsg);
+    }
   });
 
   socket.on('typing', (data) => {
@@ -223,7 +291,7 @@ io.on('connection', (socket) => {
     const userId = socket.data.userId;
     if (userId) {
       onlineUsers.delete(userId);
-      db.prepare('UPDATE users SET status = "offline", lastSeen = CURRENT_TIMESTAMP WHERE id = ?').run(userId);
+      db.prepare("UPDATE users SET status = 'offline', lastSeen = CURRENT_TIMESTAMP WHERE uid = ?").run(userId);
       io.emit('user_status', { userId, status: 'offline', lastSeen: new Date() });
     }
     console.log('User disconnected');
