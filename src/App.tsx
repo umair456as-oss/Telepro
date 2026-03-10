@@ -11,15 +11,14 @@ import {
   Plus, X, PhoneOff, VideoOff, Check, CheckCheck, 
   Menu, Moon, Sun, Pin, Trash2, Edit2, Reply, 
   File, Image as ImageIcon, Hash, Users, Radio, 
-  ChevronLeft, ChevronRight, Camera, Info, Palette
+  ChevronLeft, ChevronRight, Camera, Info, Palette,
+  Lock
 } from 'lucide-react';
 import { 
   signInWithPopup, 
   onAuthStateChanged, 
   signOut,
   User as FirebaseUser,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
   ConfirmationResult
 } from 'firebase/auth';
 import { 
@@ -41,7 +40,7 @@ import {
   arrayUnion,
   arrayRemove
 } from 'firebase/firestore';
-import { auth, db, googleProvider } from './firebase';
+import { auth, db, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
 import { cn, formatTime, formatDate, formatFileSize } from './utils';
 import { User as AppUser, Chat, Message, Call, Bot } from './types';
 
