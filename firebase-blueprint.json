@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURLs": { "type": "array", "items": { "type": "string" } },
+        "phoneNumber": { "type": "string" },
+        "bio": { "type": "string" },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["online", "offline"] },
+        "theme": { "type": "string" },
+        "pinnedChats": { "type": "array", "items": { "type": "string" } },
+        "folders": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A conversation, group, or channel",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["personal", "group", "channel", "secret"] },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "admins": { "type": "array", "items": { "type": "string" } },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "lastMessage": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "text": { "type": "string" },
+            "senderId": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" },
+            "isDeleted": { "type": "boolean" },
+            "isEdited": { "type": "boolean" }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "isPinned": { "type": "boolean" },
+        "selfDestructTime": { "type": "number" }
+      },
+      "required": ["participants", "updatedAt", "type"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A single message",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["text", "image", "call", "file", "sticker"] },
+        "isEdited": { "type": "boolean" },
+        "isDeleted": { "type": "boolean" },
+        "fileURL": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "reactions": { "type": "object" },
+        "replyTo": { "type": "string" }
+      },
+      "required": ["text", "senderId", "timestamp", "type"]
+    },
+    "Bot": {
+      "title": "Bot",
+      "description": "A bot definition",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "description": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "webhookUrl": { "type": "string" },
+        "commands": { "type": "array" }
+      },
+      "required": ["name", "username", "creatorId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Chat metadata" },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Chat messages" },
+    "/bots/{botId}": { "schema": "Bot", "description": "Bot definitions" }
+  }
+}

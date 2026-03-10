@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-pop: pop 0.2s ease-out;
+  --animate-slide-in: slide-in 0.3s ease-out;
+}
+
+:root {
+  --tg-blue: #2481cc;
+  --tg-blue-dark: #1c68a6;
+  --tg-bg: #ffffff;
+  --tg-bg-secondary: #f4f4f5;
+  --tg-text: #000000;
+  --tg-text-secondary: #707579;
+  --tg-bubble-out: #effdde;
+  --tg-bubble-in: #ffffff;
+}
+
+.dark {
+  --tg-blue: #2481cc;
+  --tg-bg: #1c1c1c;
+  --tg-bg-secondary: #242424;
+  --tg-text: #ffffff;
+  --tg-text-secondary: #aaaaaa;
+  --tg-bubble-out: #2b5278;
+  --tg-bubble-in: #212121;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pop {
+  0% { transform: scale(0.9); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slide-in {
+  0% { transform: translateX(-20px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+body {
+  background-color: var(--tg-bg);
+  color: var(--tg-text);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.chat-bubble-pop {
+  animation: pop 0.2s ease-out;
+}

@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isParticipant(chatId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+    function isAdmin(chatId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.admins;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Users
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId);
+    }
+
+    // Chats
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (
+        resource.data.type == 'channel' || 
+        request.auth.uid in resource.data.participants
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants || 
+        resource.data.type == 'channel'
+      );
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read: if resource.data.type == 'channel' || isParticipant(chatId);
+        allow create: if (
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'channel' && isAdmin(chatId)) ||
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.type != 'channel' && isParticipant(chatId))
+        ) && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isParticipant(chatId) && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Bots
+    match /bots/{botId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
+    }
+  }
+}

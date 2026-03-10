@@ -1,0 +1,5 @@
+{
+  "name": "TelePro",
+  "description": "A feature-rich, Telegram-inspired messaging platform with advanced profile systems, channels, groups, and custom themes.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
