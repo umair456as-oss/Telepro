@@ -24,7 +24,8 @@ service cloud.firestore {
     // Users
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastSeen']));
     }
 
     // Chats
@@ -41,12 +42,17 @@ service cloud.firestore {
 
       // Messages subcollection
       match /messages/{messageId} {
-        allow read: if resource.data.type == 'channel' || isParticipant(chatId);
-        allow create: if (
-          (get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'channel' && isAdmin(chatId)) ||
-          (get(/databases/$(database)/documents/chats/$(chatId)).data.type != 'channel' && isParticipant(chatId))
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'channel' || 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+        );
+        allow create: if isAuthenticated() && (
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.type == 'channel' && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.admins) ||
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.type != 'channel' && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
         ) && request.resource.data.senderId == request.auth.uid;
-        allow update, delete: if isParticipant(chatId) && resource.data.senderId == request.auth.uid;
+        allow update, delete: if isAuthenticated() && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants && 
+          resource.data.senderId == request.auth.uid;
       }
     }
 

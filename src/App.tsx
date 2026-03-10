@@ -40,15 +40,29 @@ import {
   arrayUnion,
   arrayRemove
 } from 'firebase/firestore';
-import { auth, db, googleProvider, RecaptchaVerifier, signInWithPhoneNumber } from './firebase';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  RecaptchaVerifier, 
+  signInWithPhoneNumber,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
+} from './firebase';
 import { cn, formatTime, formatDate, formatFileSize } from './utils';
 import { User as AppUser, Chat, Message, Call, Bot } from './types';
 
 // --- Components ---
 
 const Login = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [error, setError] = useState('');
@@ -58,6 +72,34 @@ const Login = () => {
       (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         size: 'invisible',
       });
+    }
+  };
+
+  const handleEmailAuth = async () => {
+    setError('');
+    try {
+      if (mode === 'register') {
+        if (!displayName) {
+          setError('Please enter a display name');
+          return;
+        }
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, { displayName });
+        await setDoc(doc(db, 'users', result.user.uid), {
+          uid: result.user.uid,
+          displayName: displayName,
+          username: displayName.toLowerCase().replace(/\s+/g, '_') || `user_${result.user.uid.slice(0, 5)}`,
+          email: result.user.email,
+          photoURLs: [result.user.photoURL || ''],
+          lastSeen: serverTimestamp(),
+          status: 'online',
+          theme: '#2481cc'
+        }, { merge: true });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -118,77 +160,135 @@ const Login = () => {
   };
 
   return (
-    <div className="h-screen bg-[#f4f4f5] dark:bg-[#1c1c1c] flex items-center justify-center p-4">
+    <div className="h-screen bg-[#f4f4f5] dark:bg-[#1c1c1c] flex items-center justify-center p-4 overflow-y-auto">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white dark:bg-[#212121] p-8 rounded-3xl shadow-2xl text-center max-w-md w-full border border-gray-100 dark:border-white/5"
+        className="bg-white dark:bg-[#212121] p-8 rounded-3xl shadow-2xl text-center max-w-md w-full border border-gray-100 dark:border-white/5 my-8"
       >
-        <div className="w-24 h-24 bg-[#2481cc] rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg transform rotate-12">
-          <Send className="w-12 h-12 text-white -rotate-12" />
+        <div className="w-20 h-20 bg-[#2481cc] rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg transform rotate-12">
+          <Send className="w-10 h-10 text-white -rotate-12" />
         </div>
-        <h1 className="text-4xl font-bold text-[#1c1c1c] dark:text-white mb-2">TelePro</h1>
-        <p className="text-[#707579] mb-10 text-lg leading-relaxed">The world's fastest messaging app. It is free and secure.</p>
+        <h1 className="text-3xl font-bold text-[#1c1c1c] dark:text-white mb-2">TelePro</h1>
+        <p className="text-[#707579] mb-8 text-base leading-relaxed">
+          {mode === 'login' ? 'Welcome back! Sign in to continue.' : 'Create an account to get started.'}
+        </p>
         
         <div id="recaptcha-container"></div>
 
-        {step === 'phone' ? (
+        <div className="flex bg-gray-100 dark:bg-[#1c1c1c] p-1 rounded-xl mb-6">
+          <button 
+            onClick={() => setMethod('email')}
+            className={cn("flex-1 py-2 rounded-lg text-sm font-bold transition-all", method === 'email' ? "bg-white dark:bg-[#2d2d2d] shadow-sm text-[#2481cc]" : "text-[#707579]")}
+          >
+            Email
+          </button>
+          <button 
+            onClick={() => setMethod('phone')}
+            className={cn("flex-1 py-2 rounded-lg text-sm font-bold transition-all", method === 'phone' ? "bg-white dark:bg-[#2d2d2d] shadow-sm text-[#2481cc]" : "text-[#707579]")}
+          >
+            Phone
+          </button>
+        </div>
+
+        {method === 'email' ? (
           <div className="space-y-4">
-            <div className="relative">
+            {mode === 'register' && (
+              <input
+                type="text"
+                placeholder="Display Name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
+              />
+            )}
+            <input
+              type="email"
+              placeholder="Email Address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
+            />
+            <button
+              onClick={handleEmailAuth}
+              className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+            >
+              {mode === 'login' ? 'Sign In' : 'Create Account'}
+            </button>
+            <p className="text-sm text-[#707579]">
+              {mode === 'login' ? "Don't have an account? " : "Already have an account? "}
+              <button 
+                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+                className="text-[#2481cc] font-bold hover:underline"
+              >
+                {mode === 'login' ? 'Register' : 'Login'}
+              </button>
+            </p>
+          </div>
+        ) : (
+          step === 'phone' ? (
+            <div className="space-y-4">
               <input
                 type="tel"
                 placeholder="Phone Number (e.g. +1234567890)"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-4 px-6 text-lg transition-all dark:text-white"
+                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
               />
+              <button
+                onClick={handlePhoneLogin}
+                className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+              >
+                Continue with Phone
+              </button>
             </div>
-            <button
-              onClick={handlePhoneLogin}
-              className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95"
-            >
-              Continue with Phone
-            </button>
-            <div className="flex items-center gap-4 my-6">
-              <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
-              <span className="text-xs text-[#707579] font-bold uppercase">OR</span>
-              <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
-            </div>
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full bg-white dark:bg-[#1c1c1c] hover:bg-gray-50 dark:hover:bg-white/5 text-[#1c1c1c] dark:text-white font-bold py-4 rounded-xl transition-all shadow-md border border-gray-200 dark:border-white/10 flex items-center justify-center gap-3 active:scale-95"
-            >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" alt="Google" />
-              Sign in with Google
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="relative">
+          ) : (
+            <div className="space-y-4">
               <input
                 type="text"
                 placeholder="Verification Code"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
-                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-4 px-6 text-lg transition-all dark:text-white text-center tracking-widest"
+                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white text-center tracking-widest"
               />
+              <button
+                onClick={handleVerifyOtp}
+                className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+              >
+                Verify Code
+              </button>
+              <button
+                onClick={() => setStep('phone')}
+                className="w-full text-[#2481cc] font-bold py-2 hover:underline transition-all"
+              >
+                Change Phone Number
+              </button>
             </div>
-            <button
-              onClick={handleVerifyOtp}
-              className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95"
-            >
-              Verify Code
-            </button>
-            <button
-              onClick={() => setStep('phone')}
-              className="w-full text-[#2481cc] font-bold py-2 hover:underline transition-all"
-            >
-              Change Phone Number
-            </button>
-          </div>
+          )
         )}
 
-        {error && <p className="text-red-500 mt-4 text-sm">{error}</p>}
+        <div className="flex items-center gap-4 my-6">
+          <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
+          <span className="text-xs text-[#707579] font-bold uppercase">OR</span>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
+        </div>
+
+        <button
+          onClick={handleGoogleLogin}
+          className="w-full bg-white dark:bg-[#1c1c1c] hover:bg-gray-50 dark:hover:bg-white/5 text-[#1c1c1c] dark:text-white font-bold py-3 rounded-xl transition-all shadow-md border border-gray-200 dark:border-white/10 flex items-center justify-center gap-3 active:scale-95"
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+          Sign in with Google
+        </button>
+
+        {error && <p className="text-red-500 mt-4 text-sm bg-red-50 dark:bg-red-900/10 p-2 rounded-lg">{error}</p>}
       </motion.div>
     </div>
   );
@@ -225,6 +325,12 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
+        // Set online status
+        updateDoc(doc(db, 'users', u.uid), {
+          status: 'online',
+          lastSeen: serverTimestamp()
+        }).catch(console.error);
+
         onSnapshot(doc(db, 'users', u.uid), (doc) => {
           setAppUser(doc.data() as AppUser);
           if (doc.data()?.theme) setThemeColor(doc.data()?.theme);
@@ -232,8 +338,16 @@ export default function App() {
       }
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      if (user) {
+        updateDoc(doc(db, 'users', user.uid), {
+          status: 'offline',
+          lastSeen: serverTimestamp()
+        }).catch(console.error);
+      }
+    };
+  }, [user?.uid]); // Use user?.uid to avoid unnecessary re-runs but catch login/logout
 
   // Fetch Chats
   useEffect(() => {
@@ -568,7 +682,12 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="font-bold text-lg leading-tight">{getOtherParticipant(activeChat).displayName}</h3>
-                  <p className="text-xs text-[#2481cc] font-medium">online</p>
+                  <p className={cn(
+                    "text-xs font-medium",
+                    getOtherParticipant(activeChat).status === 'online' ? "text-[#2481cc]" : "text-[#707579]"
+                  )}>
+                    {getOtherParticipant(activeChat).status === 'online' ? 'online' : `last seen ${formatTime(getOtherParticipant(activeChat).lastSeen)}`}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-6 text-[#707579]">
