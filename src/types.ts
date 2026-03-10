@@ -16,6 +16,9 @@ export interface User {
   theme?: string; // Hex code or theme ID
   pinnedChats?: string[];
   folders?: { id: string; name: string; chatIds: string[] }[];
+  banned?: boolean;
+  verified?: boolean;
+  role?: 'admin' | 'user';
 }
 
 export interface Chat {
@@ -41,9 +44,10 @@ export interface Chat {
 
 export interface Message {
   id: string;
+  chatId: string;
   text: string;
   senderId: string;
-  timestamp: any; // Firestore Timestamp
+  timestamp: any; // Firestore Timestamp or ISO string
   type: 'text' | 'image' | 'call' | 'file' | 'sticker';
   isEdited?: boolean;
   isDeleted?: boolean;
