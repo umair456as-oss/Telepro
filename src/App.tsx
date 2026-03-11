@@ -12,7 +12,7 @@ import {
   Menu, Moon, Sun, Pin, Trash2, Edit2, Reply, 
   File, Image as ImageIcon, Hash, Users, Radio, 
   ChevronLeft, ChevronRight, Camera, Info, Palette,
-  Lock, Shield
+  Lock, Shield, ArrowLeft
 } from 'lucide-react';
 import { cn, formatTime, formatDate, formatFileSize } from './utils';
 import { User as AppUser, Chat, Message, Call, Bot } from './types';
@@ -203,6 +203,13 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
         </button>
 
         {error && <p className="text-red-500 mt-4 text-sm bg-red-50 dark:bg-red-900/10 p-2 rounded-lg">{error}</p>}
+        
+        <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/20">
+          <p className="text-xs font-bold text-[#2481cc] uppercase mb-1">Admin Access</p>
+          <p className="text-xs text-[#707579]">Email: <span className="font-mono font-bold">admin@telepro.com</span></p>
+          <p className="text-xs text-[#707579]">Pass: <span className="font-mono font-bold">admin123</span></p>
+          <p className="text-[10px] text-[#707579] mt-2 italic">* Or click your avatar 5 times in the sidebar after login.</p>
+        </div>
       </motion.div>
     </div>
   );
@@ -227,6 +234,28 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [themeColor, setThemeColor] = useState('#2481cc');
   const [typingUsers, setTypingUsers] = useState<{ [chatId: string]: string[] }>({});
+  const [logoClicks, setLogoClicks] = useState(0);
+  const [showChatOnMobile, setShowChatOnMobile] = useState(false);
+
+  const handleLogoClick = async () => {
+    setLogoClicks(prev => {
+      const next = prev + 1;
+      if (next >= 5) {
+        if (user) {
+          const updatedUser = { ...user, role: 'admin' as const };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          api.post('/admin/promote', {}).catch(console.error);
+        }
+        return 0;
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (activeChat) setShowChatOnMobile(true);
+  }, [activeChat]);
   
   const filteredUsers = users.filter(u => 
     u.uid !== user?.uid && 
@@ -458,44 +487,57 @@ export default function App() {
   if (!user) return <Login onLogin={handleLogin} />;
 
   return (
-    <div className={cn("flex h-screen overflow-hidden font-sans", isDarkMode ? "dark bg-[#1c1c1c]" : "bg-white")}>
-      {/* Sidebar Overlay */}
-      <AnimatePresence>
-        {showSidebar && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowSidebar(false)}
-            className="absolute inset-0 bg-black/40 z-[60] backdrop-blur-sm"
-          />
-        )}
-      </AnimatePresence>
+    <div className={cn("min-h-screen flex items-center justify-center font-sans transition-all duration-500", isDarkMode ? "dark bg-[#0f0f0f]" : "bg-[#DEE5EB]")}>
+      <div className={cn(
+        "w-full h-screen sm:h-[90vh] sm:max-w-[450px] sm:rounded-[3rem] sm:border-[8px] sm:border-[#1c1c1c] overflow-hidden relative shadow-2xl bg-white dark:bg-[#1c1c1c] transition-all",
+        isDarkMode ? "sm:border-[#2d2d2d]" : "sm:border-[#1c1c1c]"
+      )}>
+        {/* Sidebar Overlay */}
+        <AnimatePresence>
+          {showSidebar && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSidebar(false)}
+              className="absolute inset-0 bg-black/40 z-[60] backdrop-blur-sm"
+            />
+          )}
+        </AnimatePresence>
 
-      {/* Sidebar Menu */}
-      <motion.div 
-        initial={{ x: -300 }}
-        animate={{ x: showSidebar ? 0 : -300 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="absolute left-0 top-0 bottom-0 w-[300px] bg-white dark:bg-[#212121] z-[70] shadow-2xl flex flex-col"
-      >
-        <div className="p-6 bg-[#2481cc] text-white">
-          <div className="flex justify-between items-start mb-4">
-            <div className="w-16 h-16 rounded-full bg-white/20 overflow-hidden border-2 border-white/30">
-              <img src={user?.photoURLs?.[0] || `https://picsum.photos/seed/${user.uid}/100/100`} alt="Me" className="w-full h-full object-cover" />
+        {/* Sidebar Menu */}
+        <motion.div 
+          initial={{ x: -300 }}
+          animate={{ x: showSidebar ? 0 : -300 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className="absolute left-0 top-0 bottom-0 w-[300px] bg-white dark:bg-[#212121] z-[70] shadow-2xl flex flex-col"
+        >
+          <div className="p-6 bg-[#2481cc] text-white">
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-16 h-16 rounded-full bg-white/20 overflow-hidden border-2 border-white/30 cursor-pointer" onClick={handleLogoClick}>
+                <img src={user?.photoURLs?.[0] || `https://picsum.photos/seed/${user.uid}/100/100`} alt="Me" className="w-full h-full object-cover" />
+              </div>
+              <button onClick={toggleTheme} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+              </button>
             </div>
-            <button onClick={toggleTheme} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-              {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
-            </button>
+            <h3 className="font-bold text-lg">{user?.displayName}</h3>
+            <p className="text-white/70 text-sm">@{user?.username}</p>
           </div>
-          <h3 className="font-bold text-lg">{user?.displayName}</h3>
-          <p className="text-white/70 text-sm">@{user?.username}</p>
-        </div>
-        <div className="flex-1 py-4 overflow-y-auto">
-          <div className="px-4 py-3 flex items-center gap-6 hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-colors">
-            <Users className="w-6 h-6 text-gray-400" />
-            <span className="font-medium">New Group</span>
-          </div>
+          <div className="flex-1 py-4 overflow-y-auto">
+            {user?.role === 'admin' && (
+              <div 
+                onClick={() => { setShowAdminDashboard(true); setShowSidebar(false); }}
+                className="px-4 py-3 flex items-center gap-6 hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-colors text-amber-500"
+              >
+                <Shield className="w-6 h-6" />
+                <span className="font-bold">Core Control Panel</span>
+              </div>
+            )}
+            <div className="px-4 py-3 flex items-center gap-6 hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-colors">
+              <Users className="w-6 h-6 text-gray-400" />
+              <span className="font-medium">New Group</span>
+            </div>
           <div className="px-4 py-3 flex items-center gap-6 hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-colors">
             <Radio className="w-6 h-6 text-gray-400" />
             <span className="font-medium">New Channel</span>
@@ -538,7 +580,10 @@ export default function App() {
       </motion.div>
 
       {/* Main Sidebar (Chat List) */}
-      <div className="w-[400px] flex flex-col border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#212121]">
+      <div className={cn(
+        "w-full sm:w-[400px] flex flex-col border-r border-gray-200 dark:border-white/5 bg-white dark:bg-[#212121] h-full",
+        showChatOnMobile && "hidden sm:flex"
+      )}>
         <div className="p-4 flex items-center gap-4">
           <button onClick={() => setShowSidebar(true)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
             <Menu className="w-6 h-6 text-[#707579]" />
@@ -619,17 +664,29 @@ export default function App() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative bg-[#f4f4f5] dark:bg-[#1c1c1c]">
+      <div className={cn(
+        "flex-1 flex flex-col relative bg-[#f4f4f5] dark:bg-[#1c1c1c] h-full",
+        !showChatOnMobile && "hidden sm:flex"
+      )}>
         {activeChat ? (
           <>
             {/* Chat Header */}
-            <div className="h-[64px] bg-white dark:bg-[#212121] px-6 flex items-center justify-between shadow-sm z-10">
-              <div className="flex items-center gap-4 cursor-pointer" onClick={() => setShowProfile(true)}>
-                <div className="w-10 h-10 rounded-full overflow-hidden shadow-sm">
-                  <img src={getOtherParticipant(activeChat).photoURL || `https://picsum.photos/seed/${activeChat.id}/100/100`} alt="Avatar" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg leading-tight">{getOtherParticipant(activeChat).displayName}</h3>
+            <div className="h-[64px] bg-white dark:bg-[#212121] px-4 sm:px-6 flex items-center justify-between shadow-sm z-10">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <button 
+                  onClick={() => setShowChatOnMobile(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full sm:hidden"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowProfile(true)}>
+                  <div className="w-10 h-10 rounded-full overflow-hidden shadow-sm">
+                    <img src={getOtherParticipant(activeChat).photoURL || `https://picsum.photos/seed/${activeChat.id}/100/100`} alt="Avatar" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base sm:text-lg leading-tight truncate max-w-[150px] sm:max-w-none">
+                      {getOtherParticipant(activeChat).displayName}
+                    </h3>
                   <div className="flex items-center gap-1">
                     {typingUsers[activeChat.id]?.length > 0 ? (
                       <p className="text-xs font-medium text-[#2481cc] animate-pulse">
@@ -646,7 +703,8 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-6 text-[#707579]">
+            </div>
+            <div className="flex items-center gap-6 text-[#707579]">
                 <Search className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
                 <Phone className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
                 <MoreVertical className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
@@ -891,5 +949,6 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  </div>
   );
 }

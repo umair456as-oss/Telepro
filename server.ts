@@ -31,7 +31,14 @@ db.exec(`
   -- Create a default Bot user if not exists
   INSERT OR IGNORE INTO users (uid, username, displayName, role, verified) 
   VALUES ('bot-1', 'telepro_bot', 'TelePro Assistant', 'bot', 1);
+`);
 
+// Create a default Admin user if not exists (password: admin123)
+const adminPassword = bcrypt.hashSync('admin123', 10);
+db.prepare('INSERT OR IGNORE INTO users (uid, username, displayName, email, password, role, verified) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  .run('admin-1', 'admin', 'System Administrator', 'admin@telepro.com', adminPassword, 'admin', 1);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS chats (
     id TEXT PRIMARY KEY,
     type TEXT,
@@ -187,6 +194,19 @@ app.post('/api/chats', (req, res) => {
 });
 
 // --- Admin Routes ---
+
+app.post('/api/admin/promote', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  
+  try {
+    const decoded: any = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    db.prepare("UPDATE users SET role = 'admin' WHERE uid = ?").run(decoded.uid);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
 
 app.post('/api/admin/users/:uid/ban', (req, res) => {
   const { banned } = req.body;
