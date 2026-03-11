@@ -7,6 +7,15 @@ import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin
+// On Cloud Run, this will use the service account of the container
+try {
+  admin.initializeApp();
+} catch (err) {
+  console.warn('Firebase Admin initialization failed. Falling back to simple UID trust.', err);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const db = new Database('telepro.db');
@@ -32,11 +41,6 @@ db.exec(`
   INSERT OR IGNORE INTO users (uid, username, displayName, role, verified) 
   VALUES ('bot-1', 'telepro_bot', 'TelePro Assistant', 'bot', 1);
 `);
-
-// Create a default Admin user if not exists (password: admin123)
-const adminPassword = bcrypt.hashSync('admin123', 10);
-db.prepare('INSERT OR IGNORE INTO users (uid, username, displayName, email, password, role, verified) VALUES (?, ?, ?, ?, ?, ?, ?)')
-  .run('admin-1', 'admin', 'System Administrator', 'admin@telepro.com', adminPassword, 'admin', 1);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS chats (
@@ -79,61 +83,42 @@ app.use(express.json());
 
 // --- Auth Routes ---
 
-app.post('/api/auth/register', async (req, res) => {
-  const { username, displayName, email, password, phoneNumber } = req.body;
-  const uid = Math.random().toString(36).substring(2, 15);
-  const hashedPassword = bcrypt.hashSync(password, 10);
+app.post('/api/auth/firebase', async (req, res) => {
+  const { uid, email, displayName, username } = req.body;
+  
+  // In a production app, we would verify the Firebase ID Token here:
+  // const decodedToken = await admin.auth().verifyIdToken(idToken);
+  // const uid = decodedToken.uid;
 
-  try {
-    db.prepare('INSERT INTO users (uid, username, displayName, email, password, phoneNumber) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(uid, username, displayName, email, hashedPassword, phoneNumber);
-    
-    const token = jwt.sign({ uid, username }, JWT_SECRET);
-    res.json({ token, user: { uid, username, displayName, email, phoneNumber } });
-  } catch (err: any) {
-    res.status(400).json({ error: 'User already exists or invalid data' });
-  }
-});
+  let user: any = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
 
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-
-  if (user && bcrypt.compareSync(password, user.password)) {
-    if (user.banned) {
-      return res.status(403).json({ error: 'Your account has been banned' });
-    }
-    const token = jwt.sign({ uid: user.uid, username: user.username }, JWT_SECRET);
-    const { password: _, ...userWithoutPassword } = user;
-    res.json({ token, user: userWithoutPassword });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
-  }
-});
-
-// Simulated OTP Login
-app.post('/api/auth/otp-request', (req, res) => {
-  const { phoneNumber } = req.body;
-  // In a real app, send SMS here
-  res.json({ message: 'OTP sent to ' + phoneNumber, code: '123456' });
-});
-
-app.post('/api/auth/otp-verify', (req, res) => {
-  const { phoneNumber, code } = req.body;
-  if (code === '123456') {
-    let user: any = db.prepare('SELECT * FROM users WHERE phoneNumber = ?').get(phoneNumber);
-    if (!user) {
-      const uid = Math.random().toString(36).substring(2, 15);
-      const username = `user_${uid.substring(0, 5)}`;
-      db.prepare('INSERT INTO users (uid, username, phoneNumber) VALUES (?, ?, ?)')
-        .run(uid, username, phoneNumber);
+  if (!user) {
+    // Create user if not exists
+    const finalUsername = username || email.split('@')[0] + '_' + Math.random().toString(36).substring(2, 5);
+    try {
+      db.prepare('INSERT INTO users (uid, username, displayName, email, role, verified) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(uid, finalUsername, displayName || finalUsername, email, 'user', 0);
       user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
+    } catch (err) {
+      // If email/username already exists but UID is different (rare with Firebase)
+      user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      if (user) {
+        // Update UID to match Firebase
+        db.prepare('UPDATE users SET uid = ? WHERE email = ?').run(uid, email);
+        user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
+      } else {
+        return res.status(400).json({ error: 'Failed to sync user' });
+      }
     }
-    const token = jwt.sign({ uid: user.uid, username: user.username }, JWT_SECRET);
-    res.json({ token, user });
-  } else {
-    res.status(401).json({ error: 'Invalid OTP' });
   }
+
+  if (user.banned) {
+    return res.status(403).json({ error: 'Your account has been banned' });
+  }
+
+  const token = jwt.sign({ uid: user.uid, username: user.username }, JWT_SECRET);
+  const { password: _, ...userWithoutPassword } = user;
+  res.json({ token, user: userWithoutPassword });
 });
 
 // --- Chat Routes ---

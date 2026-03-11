@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Shield, Trash2, Edit2, X, Check, ArrowLeft, Ban, Activity, 
-  BadgeCheck, Bot, Sparkles, Send, Search, LayoutDashboard, UserCog 
+  BadgeCheck, Bot, Sparkles, Send, Search, LayoutDashboard, UserCog,
+  Terminal as TerminalIcon, Globe, Lock, Cpu, Zap, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User } from '../types';
 import { cn } from '../utils';
 import { api } from '../services/api';
+import { GoogleGenAI } from "@google/genai";
 
 // --- Sub-Components for Clean Code ---
 
@@ -29,9 +31,16 @@ const StatCard = ({ label, value, icon: Icon, color }: any) => (
 export default function AdminDashboard({ onBack }: { onBack: () => void }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'banned' | 'verified'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'banned' | 'verified' | 'controls'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiInput, setAiInput] = useState('');
+  const [aiMessages, setAiMessages] = useState<{role: 'user' | 'bot', text: string}[]>([]);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [targetQuery, setTargetQuery] = useState('');
+  const [targetResult, setTargetResult] = useState<User | null>(null);
+
+  const aiEndRef = useRef<HTMLDivElement>(null);
 
   const fetchUsers = async () => {
     try {
@@ -47,6 +56,45 @@ export default function AdminDashboard({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    aiEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [aiMessages]);
+
+  const handleAiAsk = async () => {
+    if (!aiInput.trim()) return;
+    
+    const userMsg = aiInput;
+    setAiInput('');
+    setAiMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsAiLoading(true);
+
+    try {
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: userMsg,
+        config: {
+          systemInstruction: "You are the TelePro System AI. You assist administrators with system management, user data analysis, and security protocols. Keep your tone professional, technical, and slightly 'terminal-like'.",
+        }
+      });
+
+      setAiMessages(prev => [...prev, { role: 'bot', text: response.text || "System error: No response generated." }]);
+    } catch (err) {
+      console.error(err);
+      setAiMessages(prev => [...prev, { role: 'bot', text: "Critical Error: Connection to Neural Link failed." }]);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleTargetSearch = () => {
+    const found = users.find(u => 
+      u.username?.toLowerCase() === targetQuery.toLowerCase() || 
+      u.email?.toLowerCase() === targetQuery.toLowerCase()
+    );
+    setTargetResult(found || null);
+  };
 
   const handleBan = async (uid: string, currentStatus: boolean | undefined) => {
     try {
@@ -140,6 +188,7 @@ export default function AdminDashboard({ onBack }: { onBack: () => void }) {
           <NavButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={UserCog} label="User Database" />
           <NavButton active={activeTab === 'banned'} onClick={() => setActiveTab('banned')} icon={Ban} label="Blacklist" />
           <NavButton active={activeTab === 'verified'} onClick={() => setActiveTab('verified')} icon={BadgeCheck} label="Verified" />
+          <NavButton active={activeTab === 'controls'} onClick={() => setActiveTab('controls')} icon={TerminalIcon} label="Controls" />
         </aside>
 
         {/* Dynamic Content Area */}
@@ -185,13 +234,13 @@ export default function AdminDashboard({ onBack }: { onBack: () => void }) {
                     <table className="w-full text-left">
                       <thead className="bg-slate-50 dark:bg-[#1c1c1c] border-b border-slate-200 dark:border-white/5">
                         <tr>
-                          <th className="px-6 py-4 font-bold text-slate-500 text-xs">USER</th>
-                          <th className="px-6 py-4 font-bold text-slate-500 text-xs">CONTACT</th>
-                          <th className="px-6 py-4 font-bold text-slate-500 text-xs">ROLE</th>
-                          <th className="px-6 py-4 font-bold text-slate-500 text-xs text-right">ACTIONS</th>
+                          <th className="px-6 py-4 font-bold text-slate-500 text-xs uppercase tracking-widest">User</th>
+                          <th className="px-6 py-4 font-bold text-slate-500 text-xs uppercase tracking-widest">Contact</th>
+                          <th className="px-6 py-4 font-bold text-slate-500 text-xs uppercase tracking-widest">Role</th>
+                          <th className="px-6 py-4 font-bold text-slate-500 text-xs uppercase tracking-widest text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/5 font-mono text-xs">
                         {filteredUsers.map((u) => (
                           <tr key={u.uid} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
                             <td className="px-6 py-4 flex items-center gap-3">
@@ -209,10 +258,10 @@ export default function AdminDashboard({ onBack }: { onBack: () => void }) {
                                     {u.displayName || u.username}
                                     {u.verified && <BadgeCheck size={14} className="text-blue-500" />}
                                   </p>
-                                  <p className="text-[10px] text-slate-400 font-mono">UID: {u.uid.substring(0,8)}</p>
+                                  <p className="text-[10px] text-slate-400">UID: {u.uid.substring(0,8)}</p>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">
+                            <td className="px-6 py-4 text-slate-600 dark:text-slate-400">
                               {u.email}<br/><span className="text-slate-400">{u.phoneNumber}</span>
                             </td>
                             <td className="px-6 py-4">
@@ -254,16 +303,182 @@ export default function AdminDashboard({ onBack }: { onBack: () => void }) {
                     </table>
                   </div>
                   {filteredUsers.length === 0 && (
-                    <div className="p-12 text-center text-slate-400">
-                      No users found matching your criteria.
+                    <div className="p-12 text-center text-slate-400 font-mono">
+                      NO RECORDS MATCHING CRITERIA.
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Controls Tab */}
+              {activeTab === 'controls' && (
+                <div className="space-y-6">
+                  <div className="bg-slate-900 rounded-2xl p-8 border border-slate-700 shadow-2xl">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Cpu className="w-6 h-6 text-blue-500" />
+                      <h2 className="text-xl font-mono font-bold text-white uppercase tracking-tighter">Target Acquisition System</h2>
+                    </div>
+                    
+                    <div className="flex gap-4 mb-8">
+                      <div className="flex-1 relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                        <input 
+                          type="text"
+                          placeholder="ENTER USERNAME OR EMAIL..."
+                          className="w-full pl-12 pr-4 py-4 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                          value={targetQuery}
+                          onChange={(e) => setTargetQuery(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleTargetSearch()}
+                        />
+                      </div>
+                      <button 
+                        onClick={handleTargetSearch}
+                        className="px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all flex items-center gap-2"
+                      >
+                        <Zap className="w-5 h-5" /> LOCATE
+                      </button>
+                    </div>
+
+                    {targetResult ? (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-800/50 rounded-xl border border-slate-700/50"
+                      >
+                        <div className="flex flex-col items-center text-center space-y-4">
+                          <div className="w-24 h-24 rounded-full border-4 border-blue-500/30 overflow-hidden">
+                            <img src={targetResult.photoURLs?.[0] || `https://picsum.photos/seed/${targetResult.uid}/200/200`} className="w-full h-full object-cover" />
+                          </div>
+                          <div>
+                            <p className="text-white font-bold text-lg">{targetResult.displayName}</p>
+                            <p className="text-blue-400 font-mono text-xs">@{targetResult.username}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="md:col-span-2 space-y-4 font-mono text-xs">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                              <p className="text-slate-500 mb-1 uppercase">Status</p>
+                              <p className={cn("font-bold", targetResult.status === 'online' ? "text-green-500" : "text-slate-400")}>
+                                {targetResult.status?.toUpperCase() || 'OFFLINE'}
+                              </p>
+                            </div>
+                            <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                              <p className="text-slate-500 mb-1 uppercase">Access Level</p>
+                              <p className="text-blue-400 font-bold">{targetResult.role?.toUpperCase() || 'USER'}</p>
+                            </div>
+                            <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                              <p className="text-slate-500 mb-1 uppercase">Verification</p>
+                              <p className={cn("font-bold", targetResult.verified ? "text-purple-500" : "text-slate-400")}>
+                                {targetResult.verified ? 'VERIFIED' : 'UNVERIFIED'}
+                              </p>
+                            </div>
+                            <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                              <p className="text-slate-500 mb-1 uppercase">Account ID</p>
+                              <p className="text-white">{targetResult.uid.substring(0, 12)}...</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-3 pt-4">
+                            <button className="flex-1 py-3 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-600/50 rounded-lg transition-all font-bold">TERMINATE SESSION</button>
+                            <button className="flex-1 py-3 bg-blue-600/20 hover:bg-blue-600 text-blue-500 hover:text-white border border-blue-600/50 rounded-lg transition-all font-bold">OVERRIDE PERMS</button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : targetQuery && (
+                      <div className="text-center py-12 border-2 border-dashed border-slate-700 rounded-xl">
+                        <p className="text-slate-500 font-mono">NO TARGET MATCHES FOUND IN CURRENT SECTOR.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </motion.div>
           </AnimatePresence>
         </div>
       </main>
+
+      {/* --- AI Assistant Panel --- */}
+      <AnimatePresence>
+        {showAiPanel && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAiPanel(false)}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100]"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-slate-900 border-l border-slate-700 z-[101] flex flex-col shadow-2xl"
+            >
+              <div className="p-6 border-b border-slate-700 flex items-center justify-between bg-slate-800">
+                <div className="flex items-center gap-3">
+                  <Bot className="w-6 h-6 text-blue-500" />
+                  <div>
+                    <h3 className="text-white font-mono font-bold uppercase tracking-tighter">Neural Assistant</h3>
+                    <p className="text-[10px] text-green-500 font-mono">LINK_ESTABLISHED</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-slate-700 rounded-full text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-900">
+                {aiMessages.length === 0 && (
+                  <div className="text-center py-12">
+                    <Sparkles className="w-12 h-12 text-blue-500/20 mx-auto mb-4" />
+                    <p className="text-slate-500 font-mono text-xs">AWAITING INPUT COMMANDS...</p>
+                  </div>
+                )}
+                {aiMessages.map((msg, i) => (
+                  <div key={i} className={cn(
+                    "flex flex-col max-w-[85%] space-y-1",
+                    msg.role === 'user' ? "ml-auto items-end" : "mr-auto items-start"
+                  )}>
+                    <div className={cn(
+                      "p-3 rounded-xl font-mono text-xs leading-relaxed",
+                      msg.role === 'user' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 border border-slate-700"
+                    )}>
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+                {isAiLoading && (
+                  <div className="flex items-center gap-2 text-blue-500 font-mono text-[10px] animate-pulse">
+                    <Cpu className="w-3 h-3 animate-spin" /> PROCESSING_REQUEST...
+                  </div>
+                )}
+                <div ref={aiEndRef} />
+              </div>
+
+              <div className="p-6 bg-slate-800 border-t border-slate-700">
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    placeholder="ENTER COMMAND..."
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white font-mono text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAiAsk()}
+                  />
+                  <button 
+                    onClick={handleAiAsk}
+                    disabled={isAiLoading || !aiInput.trim()}
+                    className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -17,6 +17,12 @@ import {
 import { cn, formatTime, formatDate, formatFileSize } from './utils';
 import { User as AppUser, Chat, Message, Call, Bot } from './types';
 import AdminDashboard from './components/AdminDashboard';
+import { 
+  auth, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  updateProfile 
+} from './firebase';
 import socket from './services/socket';
 import { api } from './services/api';
 
@@ -27,11 +33,7 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [method, setMethod] = useState<'email' | 'phone'>('email');
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -39,55 +41,34 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
     setError('');
     setLoading(true);
     try {
-      const endpoint = mode === 'register' ? '/auth/register' : '/auth/login';
-      const data = mode === 'register' 
-        ? { email, password, displayName, username: username || email.split('@')[0] }
-        : { email, password };
-      
-      const res = await api.post(endpoint, data);
-      onLogin(res.user, res.token);
-    } catch (err: any) {
-      let message = 'Authentication failed';
-      try {
-        // Try to parse as JSON first
-        const errorData = JSON.parse(err.message);
-        message = errorData.error || message;
-      } catch {
-        // If not JSON, check if it's HTML (likely a proxy error)
-        if (err.message.includes('<html') || err.message.includes('<!DOCTYPE')) {
-          message = 'Server error (Proxy/Network). Please ensure you are using the correct App URL.';
-        } else {
-          message = err.message || message;
-        }
+      let userCredential;
+      if (mode === 'register') {
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: displayName || email.split('@')[0] });
+        
+        // Sync with backend
+        const res = await api.post('/auth/firebase', { 
+          uid: userCredential.user.uid, 
+          email: userCredential.user.email,
+          displayName: displayName || userCredential.user.displayName || email.split('@')[0],
+          username: username || email.split('@')[0]
+        });
+        onLogin(res.user, res.token);
+      } else {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        
+        // Get token from backend
+        const res = await api.post('/auth/firebase', { 
+          uid: userCredential.user.uid, 
+          email: userCredential.user.email 
+        });
+        onLogin(res.user, res.token);
       }
-      setError(message);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePhoneLogin = async () => {
-    setError('');
-    try {
-      await api.post('/auth/otp-request', { phoneNumber: phone });
-      setStep('otp');
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    setError('');
-    try {
-      const res = await api.post('/auth/otp-verify', { phoneNumber: phone, code: otp });
-      onLogin(res.user, res.token);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setError('Google login is temporarily disabled. Please use Email or Phone.');
   };
 
   return (
@@ -105,143 +86,62 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
           {mode === 'login' ? 'Welcome back! Sign in to continue.' : 'Create an account to get started.'}
         </p>
         
-        <div id="recaptcha-container"></div>
-
         <div className="flex bg-gray-100 dark:bg-[#1c1c1c] p-1 rounded-xl mb-6">
           <button 
-            onClick={() => setMethod('email')}
-            className={cn("flex-1 py-2 rounded-lg text-sm font-bold transition-all", method === 'email' ? "bg-white dark:bg-[#2d2d2d] shadow-sm text-[#2481cc]" : "text-[#707579]")}
+            className="flex-1 py-2 rounded-lg text-sm font-bold bg-white dark:bg-[#2d2d2d] shadow-sm text-[#2481cc]"
           >
             Email
           </button>
-          <button 
-            onClick={() => setMethod('phone')}
-            className={cn("flex-1 py-2 rounded-lg text-sm font-bold transition-all", method === 'phone' ? "bg-white dark:bg-[#2d2d2d] shadow-sm text-[#2481cc]" : "text-[#707579]")}
-          >
-            Phone
-          </button>
         </div>
 
-        {method === 'email' ? (
-          <div className="space-y-4">
-            {mode === 'register' && (
-              <input
-                type="text"
-                placeholder="Display Name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
-              />
-            )}
-            <input
-              type="email"
-              placeholder="Email Address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
-            />
-            <button
-              onClick={handleEmailAuth}
-              disabled={loading}
-              className={cn(
-                "w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
-                loading && "opacity-70 cursor-not-allowed"
-              )}
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                mode === 'login' ? 'Sign In' : 'Create Account'
-              )}
-            </button>
-            <p className="text-sm text-[#707579]">
-              {mode === 'login' ? "Don't have an account? " : "Already have an account? "}
-              <button 
-                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-                className="text-[#2481cc] font-bold hover:underline"
-              >
-                {mode === 'login' ? 'Register' : 'Login'}
-              </button>
-            </p>
-          </div>
-        ) : (
-          step === 'phone' ? (
-            <div className="space-y-4">
-              <input
-                type="tel"
-                placeholder="Phone Number (e.g. +1234567890)"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white"
-              />
-              <button
-                onClick={handlePhoneLogin}
-                className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
-              >
-                Continue with Phone
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Verification Code"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white text-center tracking-widest"
-              />
-              <button
-                onClick={handleVerifyOtp}
-                className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
-              >
-                Verify Code
-              </button>
-              <button
-                onClick={() => setStep('phone')}
-                className="w-full text-[#2481cc] font-bold py-2 hover:underline transition-all"
-              >
-                Change Phone Number
-              </button>
-            </div>
-          )
+        {mode === 'register' && (
+          <input
+            type="text"
+            placeholder="Display Name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white mb-4"
+          />
         )}
-
-        <div className="flex items-center gap-4 my-6">
-          <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
-          <span className="text-xs text-[#707579] font-bold uppercase">OR</span>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-white/10"></div>
-        </div>
-
+        <input
+          type="email"
+          placeholder="Email Address"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white mb-4"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full bg-[#f4f4f5] dark:bg-[#1c1c1c] border-2 border-transparent focus:border-[#2481cc] outline-none rounded-xl py-3 px-5 text-base transition-all dark:text-white mb-6"
+        />
         <button
-          onClick={handleGoogleLogin}
-          className="w-full bg-white dark:bg-[#1c1c1c] hover:bg-gray-50 dark:hover:bg-white/5 text-[#1c1c1c] dark:text-white font-bold py-3 rounded-xl transition-all shadow-md border border-gray-200 dark:border-white/10 flex items-center justify-center gap-3 active:scale-95"
+          onClick={handleEmailAuth}
+          disabled={loading}
+          className={cn(
+            "w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
+            loading && "opacity-70 cursor-not-allowed"
+          )}
         >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-          Sign in with Google
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            mode === 'login' ? 'Sign In' : 'Create Account'
+          )}
         </button>
+        <p className="text-sm text-[#707579] mt-4">
+          {mode === 'login' ? "Don't have an account? " : "Already have an account? "}
+          <button 
+            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            className="text-[#2481cc] font-bold hover:underline"
+          >
+            {mode === 'login' ? 'Register' : 'Login'}
+          </button>
+        </p>
 
         {error && <p className="text-red-500 mt-4 text-sm bg-red-50 dark:bg-red-900/10 p-2 rounded-lg">{error}</p>}
-        
-        <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/20">
-          <p className="text-xs font-bold text-[#2481cc] uppercase mb-1">Admin Access</p>
-          <p className="text-xs text-[#707579]">Email: <span className="font-mono font-bold">admin@telepro.com</span></p>
-          <p className="text-xs text-[#707579]">Pass: <span className="font-mono font-bold">admin123</span></p>
-          <p className="text-[10px] text-[#707579] mt-2 italic">* Or click your avatar 5 times in the sidebar after login.</p>
-        </div>
-
-        <div className="mt-6 pt-6 border-t border-gray-100 dark:border-white/5">
-          <p className="text-[10px] text-[#707579]">
-            Running on <span className="font-bold">Cloud Run</span>. 
-            Note: This app requires a persistent backend and will not work on static hosts like Netlify.
-          </p>
-        </div>
       </motion.div>
     </div>
   );
@@ -268,6 +168,8 @@ export default function App() {
   const [typingUsers, setTypingUsers] = useState<{ [chatId: string]: string[] }>({});
   const [logoClicks, setLogoClicks] = useState(0);
   const [showChatOnMobile, setShowChatOnMobile] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const [isSearchingMessages, setIsSearchingMessages] = useState(false);
 
   const handleLogoClick = async () => {
     setLogoClicks(prev => {
@@ -401,6 +303,8 @@ export default function App() {
   // Fetch Messages when chat changes
   useEffect(() => {
     if (!activeChat) return;
+    setMessageSearchQuery('');
+    setIsSearchingMessages(false);
     api.get(`/chats/${activeChat.id}/messages`).then(setMessages).catch(console.error);
   }, [activeChat]);
 
@@ -737,15 +641,44 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-6 text-[#707579]">
-                <Search className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
-                <Phone className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
-                <MoreVertical className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
-              </div>
+              {isSearchingMessages ? (
+                <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-full px-3 py-1 animate-in fade-in slide-in-from-right-4">
+                  <input 
+                    type="text" 
+                    placeholder="Search messages..." 
+                    autoFocus
+                    value={messageSearchQuery}
+                    onChange={(e) => setMessageSearchQuery(e.target.value)}
+                    className="bg-transparent outline-none text-sm w-32 sm:w-48"
+                  />
+                  <X 
+                    className="w-4 h-4 cursor-pointer hover:text-red-500" 
+                    onClick={() => {
+                      setIsSearchingMessages(false);
+                      setMessageSearchQuery('');
+                    }} 
+                  />
+                </div>
+              ) : (
+                <Search 
+                  className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" 
+                  onClick={() => setIsSearchingMessages(true)}
+                />
+              )}
+              <Phone className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
+              <MoreVertical className="w-6 h-6 cursor-pointer hover:text-[#2481cc] transition-colors" />
+            </div>
             </div>
 
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat dark:opacity-90">
-              {messages.map((msg) => (
+              {messages.filter(m => !messageSearchQuery || m.text.toLowerCase().includes(messageSearchQuery.toLowerCase())).length === 0 && messageSearchQuery && (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-10 bg-white/50 dark:bg-black/20 rounded-3xl backdrop-blur-sm">
+                  <Search className="w-12 h-12 text-gray-400 mb-4 opacity-20" />
+                  <p className="text-gray-500 font-medium">No messages found matching "{messageSearchQuery}"</p>
+                </div>
+              )}
+              {messages.filter(m => !messageSearchQuery || m.text.toLowerCase().includes(messageSearchQuery.toLowerCase())).map((msg) => (
                 <motion.div
                   key={msg.id}
                   initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -754,7 +687,8 @@ export default function App() {
                     "p-3 rounded-2xl shadow-sm max-w-[75%] relative group chat-bubble-pop",
                     msg.senderId === user.uid 
                       ? "self-end bg-[#effdde] dark:bg-[#2b5278] rounded-tr-none" 
-                      : "self-start bg-white dark:bg-[#212121] rounded-tl-none"
+                      : "self-start bg-white dark:bg-[#212121] rounded-tl-none",
+                    messageSearchQuery && msg.text.toLowerCase().includes(messageSearchQuery.toLowerCase()) && "ring-2 ring-yellow-400 dark:ring-yellow-600"
                   )}
                 >
                   {msg.isDeleted ? (
@@ -763,7 +697,17 @@ export default function App() {
                     </span>
                   ) : (
                     <>
-                      <p className="text-[15px] leading-relaxed">{msg.text}</p>
+                      <p className="text-[15px] leading-relaxed">
+                        {messageSearchQuery ? (
+                          <span>
+                            {msg.text.split(new RegExp(`(${messageSearchQuery})`, 'gi')).map((part, i) => 
+                              part.toLowerCase() === messageSearchQuery.toLowerCase() 
+                                ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-500/50 rounded-sm px-0.5 text-inherit">{part}</mark> 
+                                : part
+                            )}
+                          </span>
+                        ) : msg.text}
+                      </p>
                       <div className="flex items-center justify-end gap-1.5 mt-1">
                         {msg.isEdited && <span className="text-[10px] text-[#707579] italic">edited</span>}
                         <span className="text-[11px] text-[#707579]">{formatTime(msg.timestamp)}</span>
