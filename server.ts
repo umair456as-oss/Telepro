@@ -82,7 +82,7 @@ app.use(express.json());
 app.post('/api/auth/register', async (req, res) => {
   const { username, displayName, email, password, phoneNumber } = req.body;
   const uid = Math.random().toString(36).substring(2, 15);
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = bcrypt.hashSync(password, 10);
 
   try {
     db.prepare('INSERT INTO users (uid, username, displayName, email, password, phoneNumber) VALUES (?, ?, ?, ?, ?, ?)')
@@ -95,11 +95,14 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
   const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 
-  if (user && await bcrypt.compare(password, user.password)) {
+  if (user && bcrypt.compareSync(password, user.password)) {
+    if (user.banned) {
+      return res.status(403).json({ error: 'Your account has been banned' });
+    }
     const token = jwt.sign({ uid: user.uid, username: user.username }, JWT_SECRET);
     const { password: _, ...userWithoutPassword } = user;
     res.json({ token, user: userWithoutPassword });

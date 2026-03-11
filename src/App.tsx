@@ -33,9 +33,11 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleEmailAuth = async () => {
     setError('');
+    setLoading(true);
     try {
       const endpoint = mode === 'register' ? '/auth/register' : '/auth/login';
       const data = mode === 'register' 
@@ -45,7 +47,22 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
       const res = await api.post(endpoint, data);
       onLogin(res.user, res.token);
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      let message = 'Authentication failed';
+      try {
+        // Try to parse as JSON first
+        const errorData = JSON.parse(err.message);
+        message = errorData.error || message;
+      } catch {
+        // If not JSON, check if it's HTML (likely a proxy error)
+        if (err.message.includes('<html') || err.message.includes('<!DOCTYPE')) {
+          message = 'Server error (Proxy/Network). Please ensure you are using the correct App URL.';
+        } else {
+          message = err.message || message;
+        }
+      }
+      setError(message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -132,9 +149,17 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
             />
             <button
               onClick={handleEmailAuth}
-              className="w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+              disabled={loading}
+              className={cn(
+                "w-full bg-[#2481cc] hover:bg-[#1c68a6] text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
+                loading && "opacity-70 cursor-not-allowed"
+              )}
             >
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                mode === 'login' ? 'Sign In' : 'Create Account'
+              )}
             </button>
             <p className="text-sm text-[#707579]">
               {mode === 'login' ? "Don't have an account? " : "Already have an account? "}
@@ -209,6 +234,13 @@ const Login = ({ onLogin }: { onLogin: (user: any, token: string) => void }) => 
           <p className="text-xs text-[#707579]">Email: <span className="font-mono font-bold">admin@telepro.com</span></p>
           <p className="text-xs text-[#707579]">Pass: <span className="font-mono font-bold">admin123</span></p>
           <p className="text-[10px] text-[#707579] mt-2 italic">* Or click your avatar 5 times in the sidebar after login.</p>
+        </div>
+
+        <div className="mt-6 pt-6 border-t border-gray-100 dark:border-white/5">
+          <p className="text-[10px] text-[#707579]">
+            Running on <span className="font-bold">Cloud Run</span>. 
+            Note: This app requires a persistent backend and will not work on static hosts like Netlify.
+          </p>
         </div>
       </motion.div>
     </div>
